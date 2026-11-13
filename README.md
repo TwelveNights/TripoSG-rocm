@@ -1,121 +1,45 @@
-# TripoSG: High-Fidelity 3D Shape Synthesis using Large-Scale Rectified Flow Models
+# TripoSG for AMD GPUs (ROCm)
 
-<div align="center">
+Image-to-3D with [TripoSG](https://github.com/VAST-AI-Research/TripoSG) on AMD Radeon and Instinct GPUs, on Linux and
+on Windows. Upstream needs CUDA-only packages (`diso`, `torch_cluster`); this fork replaces them with plain PyTorch
+and scikit-image, so it runs on ROCm PyTorch with nothing to compile, including AMD's Windows wheels and ComfyUI's
+Windows portable for AMD GPUs.
 
-[![Project Page](https://img.shields.io/badge/🏠-Project%20Page-blue.svg)](https://yg256li.github.io/TripoSG-Page/)
-[![Paper](https://img.shields.io/badge/📑-Paper-green.svg)](https://arxiv.org/abs/2502.06608)
-[![Model](https://img.shields.io/badge/%F0%9F%A4%97%20Model-TripoSG-yellow.svg)](https://huggingface.co/VAST-AI/TripoSG)
-[![Online Demo](https://img.shields.io/badge/%F0%9F%A4%97%20HF%20Space-TripoSG-blue)](https://huggingface.co/spaces/VAST-AI/TripoSG)
-[![Online Demo](https://img.shields.io/badge/%F0%9F%A4%97%20HF%20Space-TripoSG%20scribble-blue)](https://huggingface.co/spaces/VAST-AI/TripoSG-scribble)
+![TripoSG on an RX 7800 XT: input image and four views of the generated mesh](assets/rocm/rx7800xt-triposg.jpg)
 
-**By [Tripo](https://www.tripo3d.ai)**
+*Input image (generated with FLUX.2 [klein] on the same card) and the mesh TripoSG made from it, on a Radeon RX
+7800 XT under Windows: 16-19 s per object.*
 
-</div>
+- **Same meshes as upstream.** Without `diso`, the flash decoder's unevaluated cells are filled from the coarser
+  level and scikit-image runs marching cubes on the complete grid: one watertight body, same topology as upstream's
+  dense path, 1.3 s at 512³.
+- **Faster settings, measured.** SageAttention ([SageAttention-rocm](https://github.com/TwelveNights/SageAttention-rocm)),
+  25 steps and octree depth 8 take a Radeon PRO W7900 from 37 s to 14 s per object with the same accuracy and a
+  quarter of the faces, which suits game assets.
+- **Works with current libraries** (diffusers, transformers) and on any PyTorch device.
 
-![teaser](assets/doc/triposg_teaser.png)
+## Quick start
 
-TripoSG is an advanced high-fidelity, high-quality and high-generalizability image-to-3D generation foundation model. It leverages large-scale rectified flow transformers, hybrid supervised training, and a high-quality dataset to achieve state-of-the-art performance in 3D shape generation.
+Install a ROCm build of PyTorch first (Linux: `pip install torch torchvision --index-url
+https://download.pytorch.org/whl/rocm7.0`; Windows: AMD's ROCm wheels), then:
 
-## ✨ Key Features
-
-- **High-Fidelity Generation**: Produces meshes with sharp geometric features, fine surface details, and complex structures
-- **Semantic Consistency**: Generated shapes accurately reflect input image semantics and appearance
-- **Strong Generalization**: Handles diverse input styles including photorealistic images, cartoons, and sketches
-- **Robust Performance**: Creates coherent shapes even for challenging inputs with complex topology
-
-## 🔬 Technical Highlights
-
-- **Large-Scale Rectified Flow Transformer**: Combines RF's linear trajectory modeling with transformer architecture for stable, efficient training
-- **Advanced VAE Architecture**: Uses Signed Distance Functions (SDFs) with hybrid supervision combining SDF loss, surface normal guidance, and eikonal loss
-- **High-Quality Dataset**: Trained on 2 million meticulously curated Image-SDF pairs, ensuring superior output quality
-- **Efficient Scaling**: Implements architecture optimizations for high performance even at smaller model scales
-
-## 🔥 Updates
-
-* [2025-04] Release TripoSG-scribble, a CFG-distilled, 512 token model for fast shape prototyping from scribble+prompt! Try the online demo [here](https://huggingface.co/spaces/VAST-AI/TripoSG-scribble).
-* [2025-03] Release of TripoSG 1.5B parameter rectified flow model and VAE trained on 2048 latent tokens, along with inference code and interactive demo
-
-## 🔨 Installation
-
-Clone the repo:
 ```bash
-git clone https://github.com/VAST-AI-Research/TripoSG.git
-cd TripoSG
+git clone -b rocm https://github.com/TwelveNights/TripoSG-rocm.git && cd TripoSG-rocm
+pip install diffusers transformers einops huggingface_hub opencv-python-headless trimesh omegaconf scikit-image peft jaxtyping typeguard pymeshlab
+PYTHONPATH=. python scripts/inference_triposg.py --image-input assets/example_data/hjswed.png --output-path out.glb
 ```
 
-Create a conda environment (optional):
-```bash
-conda create -n tripoSG python=3.10
-conda activate tripoSG
-```
+For the faster settings pass `num_inference_steps=25, flash_octree_depth=8` to the pipeline and call
+`triposg.rocm_attention.use_sage_attention()` once SageAttention is installed.
 
-Install dependencies:
-```bash
-# pytorch (select correct CUDA version)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/{your-cuda-version}
+**[ROCM.md](ROCM.md)**: what changed and how it was verified, measurements, Windows notes.
+Upstream's documentation: [README_upstream.md](README_upstream.md).
 
-# other dependencies
-pip install -r requirements.txt
-```
+## Related
 
-## 💡 Quick Start
+- [Hunyuan3D-2.1-rocm](https://github.com/TwelveNights/Hunyuan3D-2.1-rocm): Hunyuan3D-2.1 shape and PBR texturing on AMD
+- [nunchaku-rocm](https://github.com/TwelveNights/nunchaku-rocm): 4-bit FLUX, Qwen-Image, Z-Image and SDXL on AMD
+- [SageAttention-rocm](https://github.com/TwelveNights/SageAttention-rocm): 8-bit attention for AMD GPUs
 
-Generate a 3D mesh from an image:
-```bash
-python -m scripts.inference_triposg --image-input assets/example_data/hjswed.png --output-path ./output.glb
-```
-
-Limiting the number of faces:
-```bash
-python -m scripts.inference_triposg --image-input assets/example_data/hjswed.png --faces 5000 --output-path ./output.glb
-```
-
-or from scribble+prompt:
-```bash
- python -m scripts.inference_triposg_scribble --image-input assets/example_scribble_data/cat_with_wings.png --prompt "a cat with wings" --scribble-conf 0.3 --output-path output.glb
-```
-
-The required model weights will be automatically downloaded:
-- TripoSG (image condition) model from [VAST-AI/TripoSG](https://huggingface.co/VAST-AI/TripoSG) → `pretrained_weights/TripoSG`
-= TripoSG-scribble (scribble+prompt condition) model from [VAST-AI/TripoSG-scribble](https://huggingface.co/VAST-AI/TripoSG-scribble) → `pretrained_weights/TripoSG-scribble`
-- RMBG model from [briaai/RMBG-1.4](https://huggingface.co/briaai/RMBG-1.4) → `pretrained_weights/RMBG-1.4`
-
-## 💻 System Requirements
-
-- CUDA-enabled GPU with at least 8GB VRAM
-
-## 📝 Tips
-
-- If you want to use the full VAE module (including the encoder part), you need to uncomment the Line-15 in `triposg/models/autoencoders/autoencoder_kl_triposg.py` and install `torch-cluster`. and run:
-```
-python -m scripts.inference_vae --surface-input assets/example_data_point/surface_point_demo.npy
-```
-
-## 🤝 Community & Support
-
-- **Issues & Discussions**: Use GitHub Issues for bug reports and feature requests.
-- **Contributing**: We welcome contributions!
-
-## 📚 Citation
-
-```
-@article{li2025triposg,
-  title={TripoSG: High-Fidelity 3D Shape Synthesis using Large-Scale Rectified Flow Models},
-  author={Li, Yangguang and Zou, Zi-Xin and Liu, Zexiang and Wang, Dehu and Liang, Yuan and Yu, Zhipeng and Liu, Xingchao and Guo, Yuan-Chen and Liang, Ding and Ouyang, Wanli and others},
-  journal={arXiv preprint arXiv:2502.06608},
-  year={2025}
-}
-```
-
-## ⭐ Acknowledgements
-
-We would like to thank the following open-source projects and research works that made TripoSG possible:
-
-- [DINOv2](https://github.com/facebookresearch/dinov2) for their powerful visual features
-- [RMBG-1.4](https://huggingface.co/briaai/RMBG-1.4) for background removal
-- [🤗 Diffusers](https://github.com/huggingface/diffusers) for their excellent diffusion model framework
-- [HunyuanDiT](https://github.com/Tencent/HunyuanDiT) for DiT
-- [FlashVDM](https://github.com/Tencent/FlashVDM) for their lightning vecset decoder
-- [3DShape2VecSet](https://github.com/1zb/3DShape2VecSet) for 3D shape representation
-
-We are grateful to the broader research community for their open exploration and contributions to the field of 3D generation.
+The background remover the scripts use (BRIA RMBG-1.4) is licensed for non-commercial use only. TripoSG itself is
+MIT-licensed, as is this fork.
