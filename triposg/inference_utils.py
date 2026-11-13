@@ -4,7 +4,10 @@ import torch.nn as nn
 import scipy.ndimage
 from skimage import measure
 from einops import repeat
-from diso import DiffDMC
+try:
+    from diso import DiffDMC
+except ImportError:  # CUDA-only extension; fall back to scikit-image on other GPUs (e.g. AMD ROCm)
+    DiffDMC = None
 import torch.nn.functional as F
 
 from triposg.utils.typing import *
@@ -394,9 +397,19 @@ def flash_extract_geometry(
         (batch_size, grid_size[0], grid_size[1], grid_size[2])
     )
 
+    # Without diso, cells the band refinement never decodes take the trilinearly upsampled value of the coarser level
+    # (fine index 2i is coarse index i), so plain marching cubes sees a complete, sign-correct grid.
+    fill = None
     for octree_depth_now in resolutions[1:]:
         grid_size = np.array([octree_depth_now + 1] * 3)
         resolution = bbox_size / octree_depth_now
+        if DiffDMC is None:
+            known = grid_logits.squeeze(0)
+            if fill is not None:
+                known = torch.where(known == -10000., fill, known)
+            fill = F.interpolate(
+                known[None, None].float(), size=tuple(grid_size), mode="trilinear", align_corners=True
+            )[0, 0].to(dtype)
         next_index = torch.zeros(tuple(grid_size), dtype=dtype, device=device)
         next_logits = torch.full(next_index.shape, -10000., dtype=dtype, device=device)
         curr_points = extract_near_surface_volume_fn(grid_logits.squeeze(0), mc_level)
@@ -457,18 +470,24 @@ def flash_extract_geometry(
         next_logits[nidx] = grid_logits
         grid_logits = next_logits.unsqueeze(0)
     
+    if fill is not None:
+        grid_logits = torch.where(grid_logits == -10000., fill, grid_logits)
+        del fill
     grid_logits[grid_logits == -10000.] = float('nan')
     torch.cuda.empty_cache()
     mesh_v_f = []
     grid_logits = grid_logits[0]
     try:
         print("final grids shape = ", grid_logits.shape)
-        dmc = DiffDMC(dtype=torch.float32).to(grid_logits.device)
-        sdf = -grid_logits / octree_resolution
-        sdf = sdf.to(torch.float32).contiguous()
-        vertices, faces = dmc(sdf, deform=None, return_quads=False, normalize=False)
-        vertices = vertices.detach().cpu().numpy()
-        faces = faces.detach().cpu().numpy()[:, ::-1]        
+        if DiffDMC is not None:
+            dmc = DiffDMC(dtype=torch.float32).to(grid_logits.device)
+            sdf = -grid_logits / octree_resolution
+            sdf = sdf.to(torch.float32).contiguous()
+            vertices, faces = dmc(sdf, deform=None, return_quads=False, normalize=False)
+            vertices = vertices.detach().cpu().numpy()
+            faces = faces.detach().cpu().numpy()[:, ::-1]
+        else:
+            vertices, faces = marching_cubes_masked(grid_logits, mc_level)
         vertices = vertices / (2 ** octree_depth) * bbox_size + bbox_min
         mesh_v_f = (vertices.astype(np.float32), np.ascontiguousarray(faces))
     except Exception as e:
@@ -477,3 +496,25 @@ def flash_extract_geometry(
         mesh_v_f = (None, None)
 
     return [mesh_v_f]
+
+
+def marching_cubes_masked(grid_logits: torch.Tensor, level: float = 0.0):
+    """
+    Marching cubes on the sparse logit grid of `flash_extract_geometry`, without diso: scikit-image's Lewiner
+    implementation on the CPU, run only on cubes whose 8 corners were decoded (cells never evaluated are NaN), like
+    DiffDMC. Returns (vertices in grid-index space, faces) with outward-facing triangles.
+    """
+    logits = grid_logits.float()
+    valid = ~torch.isnan(logits)
+    # a cube at (i, j, k) spans corners (i..i+1, j..j+1, k..k+1): keep it only if all eight are known
+    cube_ok = valid[:-1, :-1, :-1].clone()
+    for di in (0, 1):
+        for dj in (0, 1):
+            for dk in (0, 1):
+                cube_ok &= valid[di : di + cube_ok.shape[0], dj : dj + cube_ok.shape[1], dk : dk + cube_ok.shape[2]]
+    mask = torch.zeros_like(valid)
+    mask[:-1, :-1, :-1] = cube_ok
+    vertices, faces, _, _ = measure.marching_cubes(
+        torch.nan_to_num(logits, nan=0.0).cpu().numpy(), level, method="lewiner", mask=mask.cpu().numpy()
+    )
+    return vertices, np.ascontiguousarray(faces)

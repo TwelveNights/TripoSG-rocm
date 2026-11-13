@@ -20,6 +20,7 @@ from ..inference_utils import hierarchical_extract_geometry, flash_extract_geome
 
 from ..models.autoencoders import TripoSGVAEModel
 from ..models.transformers import TripoSGDiTModel
+from ..schedulers import scheduling_rectified_flow  # noqa: F401 (diffusers only loads components from imported modules)
 from .pipeline_triposg_output import TripoSGPipelineOutput
 from .pipeline_utils import TransformerDiffusionMixin
 

@@ -107,8 +107,12 @@ from diffusers.models.modeling_utils import ModelMixin
 from diffusers.models.normalization import (
     AdaLayerNormContinuous,
     FP32LayerNorm,
-    LayerNorm,
 )
+
+try:
+    from diffusers.models.normalization import LayerNorm
+except ImportError:  # removed in newer diffusers
+    from torch.nn import LayerNorm
 from diffusers.utils import (
     USE_PEFT_BACKEND,
     is_torch_version,

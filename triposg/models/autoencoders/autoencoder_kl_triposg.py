@@ -1,3 +1,4 @@
+import math
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -8,11 +9,34 @@ from diffusers.models.attention_processor import Attention, AttentionProcessor
 from diffusers.models.autoencoders.vae import DecoderOutput
 from diffusers.models.modeling_outputs import AutoencoderKLOutput
 from diffusers.models.modeling_utils import ModelMixin
-from diffusers.models.normalization import FP32LayerNorm, LayerNorm
+from diffusers.models.normalization import FP32LayerNorm
+try:
+    from diffusers.models.normalization import LayerNorm
+except ImportError:  # removed in newer diffusers
+    from torch.nn import LayerNorm
 from diffusers.utils import logging
 from diffusers.utils.accelerate_utils import apply_forward_hook
 from einops import repeat
-# from torch_cluster import fps
+try:
+    from torch_cluster import fps
+except ImportError:  # CUDA-only wheels; plain PyTorch fallback below
+
+    def fps(src: torch.Tensor, batch: torch.Tensor, ratio: float = 0.5, random_start: bool = True) -> torch.Tensor:
+        """Farthest point sampling with torch_cluster.fps's interface: indices into `src`, `ceil(ratio * n)` per batch."""
+        out = []
+        for b in torch.unique(batch):
+            idx = torch.nonzero(batch == b, as_tuple=True)[0]
+            pts = src[idx].float()
+            k = max(1, int(math.ceil(ratio * pts.shape[0])))
+            chosen = torch.empty(k, dtype=torch.long, device=src.device)
+            chosen[0] = torch.randint(pts.shape[0], (1,), device=src.device) if random_start else 0
+            dist = torch.full((pts.shape[0],), float("inf"), device=src.device)
+            for i in range(1, k):
+                dist = torch.minimum(dist, (pts - pts[chosen[i - 1]]).square().sum(-1))
+                chosen[i] = torch.argmax(dist)
+            out.append(idx[chosen])
+        return torch.cat(out)
+
 from tqdm import tqdm
 
 from ..attention_processor import FusedTripoSGAttnProcessor2_0, TripoSGAttnProcessor2_0, FlashTripoSGAttnProcessor2_0
