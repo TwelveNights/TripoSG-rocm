@@ -33,6 +33,8 @@ Measured on a Radeon PRO W7900 (gfx1100), image to mesh:
 | + 25 steps | 23 s | 1.16 M |
 | + `flash_octree_depth=8` (256³) | **14 s** | 288 K |
 
+Radeon RX 7800 XT 16 GB, Windows 11, same optimized settings: 15.9-18.9 s per object.
+
 Depth 8 is as close to the 50-step, 512³ result as depth 9 (mean surface distance 0.07% of the bounding-box
 diagonal for both) with a quarter of the faces, which is plenty for game assets. Pass `num_inference_steps=25,
 flash_octree_depth=8` to the pipeline, and with SageAttention installed call
