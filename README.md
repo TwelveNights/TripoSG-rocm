@@ -31,8 +31,8 @@ pip install diffusers transformers einops huggingface_hub opencv-python-headless
 PYTHONPATH=. python scripts/inference_triposg.py --image-input assets/example_data/hjswed.png --output-path out.glb
 ```
 
-For the faster settings pass `num_inference_steps=25, flash_octree_depth=8` to the pipeline and call
-`triposg.rocm_attention.use_sage_attention()` once SageAttention is installed.
+For the faster settings pass `num_inference_steps=25, flash_octree_depth=8` to the pipeline, `pip install
+sageattention-rocm`, and call `triposg.rocm_attention.use_sage_attention()`.
 
 **[ROCM.md](ROCM.md)**: what changed and how it was verified, measurements, Windows notes.
 Upstream's documentation: [README_upstream.md](README_upstream.md).

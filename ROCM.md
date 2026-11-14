@@ -37,7 +37,7 @@ Radeon RX 7800 XT 16 GB, Windows 11, same optimized settings: 15.9-18.9 s per ob
 
 Depth 8 is as close to the 50-step, 512³ result as depth 9 (mean surface distance 0.07% of the bounding-box
 diagonal for both) with a quarter of the faces, which is plenty for game assets. Pass `num_inference_steps=25,
-flash_octree_depth=8` to the pipeline, and with SageAttention installed call
+flash_octree_depth=8` to the pipeline, and with SageAttention installed (`pip install sageattention-rocm`) call
 `from triposg.rocm_attention import use_sage_attention; use_sage_attention()` before running it.
 
 Note: the background remover the scripts use (BRIA RMBG-1.4) is licensed for non-commercial use only; for commercial
